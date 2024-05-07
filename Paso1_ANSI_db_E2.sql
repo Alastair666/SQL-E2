@@ -755,6 +755,74 @@ BEGIN
 END
 %%
 DELIMITER %%
+CREATE PROCEDURE sp_registro(tipo INT, p_id_registro INT, p_id_beneficiario INT, p_id_distrito INT, p_id_grupo INT, p_id_estatus TINYINT, 
+p_id_seccion INT, p_año INT, p_fecha_inicio DATE, p_fecha_termino DATE, p_id_sesion_registro INT)
+BEGIN
+	-- Validando Tipos
+	IF tipo = 1
+	THEN
+		INSERT	INTO	registro
+		(id_registro, id_beneficiario, id_distrito, id_grupo, id_estatus, id_seccion, año, fecha_inicio, fecha_termino, id_sesion_registro)
+		VALUES
+		(NULL, p_id_beneficiario, p_id_distrito, p_id_grupo, p_id_estatus, p_id_seccion, p_año, p_fecha_inicio, p_fecha_termino, p_id_sesion_registro);
+	ELSEIF tipo = 2
+    THEN
+		UPDATE registro
+        SET	id_beneficiario = p_id_beneficiario, 
+			id_distrito = p_id_distrito, 
+            id_grupo = p_id_grupo, 
+            id_estatus = p_id_estatus, 
+            id_seccion = p_id_seccion, 
+            año = p_año, 
+            fecha_inicio = p_fecha_inicio, 
+            fecha_termino = p_fecha_termino, 
+            id_sesion_registro = p_id_sesion_registro
+		WHERE	id_registro = p_id_registro;
+	ELSEIF tipo = 3
+    THEN
+		SELECT	id_registro, id_beneficiario, id_distrito, id_grupo, id_estatus, id_seccion, año, fecha_inicio, fecha_termino, id_sesion_registro
+        FROM	registro
+		WHERE	id_registro = p_id_registro;
+	END IF;
+END
+%%
+DELIMITER %%
+CREATE TRIGGER t_ai_registro BEFORE INSERT ON registro FOR EACH ROW
+BEGIN
+	DECLARE conteo_registros INT;
+    DECLARE v_id_seccion INT;
+    
+    -- Invocano Función
+    SELECT	f_determina_seccion_registro(fecha_nac, id_genero, NEW.año)
+    INTO	v_id_seccion
+    FROM	beneficiarios
+    WHERE	id_beneficiario = NEW.id_beneficiario;
+    -- Asignando Valor
+    SET NEW.id_seccion = v_id_seccion;
+    
+    -- Validando Duplicidad de registros
+    SELECT COUNT(*)
+    INTO	conteo_registros
+    FROM	registro
+	WHERE	id_beneficiario = NEW.id_beneficiario
+    AND año = NEW.año
+    AND id_grupo = NEW.id_grupo
+    AND id_seccion = NEW.id_seccion
+    ;
+    -- Validando # encontrados
+    IF conteo_registros > 0
+    THEN
+		SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Error: Ya existe el registro del beneficiario';
+    END IF;
+END
+%%
+CREATE TRIGGER t_di_registro AFTER INSERT ON registro FOR EACH ROW
+BEGIN
+	CALL sp_bitacora(1, 0, 12, 12, NEW.id_registro, CURRENT_TIMESTAMP(), '', NEW.id_sesion_registro);
+END
+%%
+DELIMITER %%
 CREATE FUNCTION f_determina_seccion_registro(fecha_nac DATE, id_genero TINYINT, anio_registro VARCHAR(10))
 RETURNS INT DETERMINISTIC
 BEGIN
